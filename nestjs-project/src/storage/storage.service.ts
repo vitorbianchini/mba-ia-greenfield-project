@@ -49,6 +49,10 @@ export class StorageService implements OnModuleInit {
     await this.ensureBucket();
   }
 
+  get uploadUrlTtlSeconds(): number {
+    return this.config.uploadUrlTtlSeconds;
+  }
+
   async ensureBucket(): Promise<void> {
     try {
       await this.client.send(
