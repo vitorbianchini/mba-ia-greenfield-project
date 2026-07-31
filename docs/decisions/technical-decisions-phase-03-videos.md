@@ -1,7 +1,7 @@
 ---
 scope_type: phase
 related_phases: [3]
-status: pending
+status: decided
 date: 2026-07-31
 scope_description: "Video upload and processing foundation: object storage, background job queue, 10GB direct-to-storage upload, video worker with FFmpeg, metadata/thumbnail extraction, unique public URL, streaming and download delivery."
 ---
@@ -42,7 +42,9 @@ _Subprojects in scope:_
 
 **Recommendation:** **Option A (BullMQ + Redis)** — it is the only option that gives declarative retry/backoff and worker concurrency without hand-written lifecycle code, and its NestJS wrapper is maintained by the Nest core team against NestJS 11, which the project already runs. The cost is one small Redis container in Compose. pg-boss's "no new infrastructure" advantage is real but is paid for with a hand-rolled worker lifecycle and by putting a polling loop on the same PostgreSQL that serves API traffic — a poor trade for a workload whose whole point is to stay off the request path. The `bullmq@^5` peer constraint is a version pin, not a functional limitation.
 
-**Decision:** _[pending]_
+**Decision:** A (BullMQ + Redis)
+
+**Libraries:** `@nestjs/bullmq@^11.0.4`, `bullmq@^5.81.3` (traz `ioredis@5.11.1` como dependência direta)
 
 ---
 
@@ -73,7 +75,11 @@ _Subprojects in scope:_
 
 **Recommendation:** **Option A (Presigned S3 multipart)** — Option B is eliminated on the hard 5GB single-PUT limit, which the 10GB requirement exceeds by construction. Between A and C, the multipart protocol is already implemented by the storage service the project is committed to, so it delivers resumability and integrity checks without adding a component. The extra API round-trip and the client-side chunking are a fair price; orphaned parts are handled by a bucket lifecycle rule for incomplete multipart uploads.
 
-**Decision:** _[pending]_
+**Decision:** A (Presigned S3 multipart upload)
+
+**Note (resolves AM-1):** "sem impacto na performance" is made falsifiable by two structural criteria rather than a latency budget, since neither is sensitive to the machine running the test: (1) no upload endpoint accepts a request body carrying video bytes — the API's only inputs are file metadata and part ETags, so request size is bounded by a small JSON payload regardless of file size; (2) `PART_SIZE` is fixed at 100MB, which keeps a 10GB upload within the S3 10,000-part limit (100 parts) while bounding client memory per part. Both are asserted directly in the e2e suite.
+
+**Libraries:** — _(usa o cliente de storage do TD-03)_
 
 ---
 
@@ -104,7 +110,9 @@ _Subprojects in scope:_
 
 **Recommendation:** **Option A** — the project has already decided to run MinIO as a stand-in for S3, so the client must be the S3 client; Option B optimises ergonomics at the cost of the exact portability the architecture was designed for. A single bucket with `videos/` and `thumbnails/` prefixes keeps bootstrap to one `CreateBucket` call and matches how every object is reached in this phase (through the API or a presigned URL, never by a public bucket policy). If Fase 04 or 05 wants CDN-fronted public thumbnails, a prefix-scoped policy covers it without a data migration.
 
-**Decision:** _[pending]_
+**Decision:** A (`@aws-sdk/client-s3` v3 + presigner, bucket único com prefixos)
+
+**Libraries:** `@aws-sdk/client-s3@^3.1101.0`, `@aws-sdk/s3-request-presigner@^3.1101.0`
 
 ---
 
@@ -135,7 +143,9 @@ _Subprojects in scope:_
 
 **Recommendation:** **Option A** — it is the only option that satisfies the diagram's container separation while keeping a single DI graph and a single source of truth for config and entities. Keeping the processor in a `WorkerModule` that `AppModule` does not import is the load-bearing detail: it is what actually guarantees the API never competes for jobs. Sharing one dev image is a deliberate simplification for local development, recorded here so the production image split is a known follow-up rather than an oversight.
 
-**Decision:** _[pending]_
+**Decision:** A (serviço Compose separado, application context standalone do NestJS)
+
+**Libraries:** — _(reusa o BullMQ do TD-01)_
 
 ---
 
@@ -166,7 +176,9 @@ _Subprojects in scope:_
 
 **Recommendation:** **Option A** — the whole requirement is two well-understood command invocations, and `execFile` with an argument array covers both safely and with zero dependencies. Option B's ergonomic gain does not justify placing an irregularly maintained package on the critical path of video processing, and Option C solves a binary-distribution problem the project does not have, since the worker image controls its own `apt` layer. Mapping the probe JSON by hand is a small, explicit cost that also produces exactly the typed metadata shape the entity needs.
 
-**Decision:** _[pending]_
+**Decision:** A (invocação direta de `ffprobe` / `ffmpeg` via `node:child_process`)
+
+**Libraries:** — _(binário `ffmpeg` instalado na imagem, sem dependência npm)_
 
 ---
 
@@ -197,7 +209,9 @@ _Subprojects in scope:_
 
 **Recommendation:** **Option A** — Option C is disqualified on the enumeration leak, which conflicts with the unlisted-video requirement already on the roadmap. Between A and B the functional result is identical, and B's only advantage (not writing the generator) is cancelled by having to pin a legacy major version to work around ESM-only packaging. A unique index plus a bounded regeneration loop makes correctness a database guarantee rather than a probability argument.
 
-**Decision:** _[pending]_
+**Decision:** A (short id aleatório gerado com `node:crypto`)
+
+**Libraries:** — _(apenas biblioteca padrão)_
 
 ---
 
@@ -228,7 +242,9 @@ _Subprojects in scope:_
 
 **Recommendation:** **Option C** — the two paths genuinely have different requirements, and forcing one mechanism onto both means losing something real. Pure Option A puts full-file 10GB transfers through Node for no benefit; pure Option B gives up the request-path hook that the visibility rules of Fase 04 and the view counter of Fase 05 are already known to need. Splitting keeps control exactly where later phases will need it and offloads the transfer that has no business logic attached. Streaming through the API is also far less costly than it first appears: a range request serves only the bytes the viewer actually reaches.
 
-**Decision:** _[pending]_
+**Decision:** C (proxy com Range no streaming, redirect pré-assinado no download)
+
+**Libraries:** — _(usa o cliente de storage do TD-03)_
 
 ---
 
@@ -259,7 +275,9 @@ _Subprojects in scope:_
 
 **Recommendation:** **Option A** — it matches the lifecycle the project plan specifies, and keeps retry mechanics owned by the queue (which is what TD-01 was chosen for) while the database owns the outcome. Options B and C both add states whose transitions are either unobservable or already tracked elsewhere. The known gap — a row stranded in `processing` if a worker dies mid-job — is accepted for this phase and left as a candidate for a reaper in a later one, rather than papered over with states that do not fix it.
 
-**Decision:** _[pending]_
+**Decision:** A (`draft → processing → ready | failed`, com retry na fila e motivo do erro persistido)
+
+**Libraries:** — _(usa o BullMQ do TD-01)_
 
 ---
 
@@ -290,7 +308,9 @@ _Subprojects in scope:_
 
 **Recommendation:** **Option A** — the project's own convention already points here (Mailpit is driven for real), and the phase's risk is concentrated exactly in the seams that mocks cannot check. Option C solves an isolation problem the project does not have, at the cost of nested Docker. The cleanup burden is real and is handled the same way the existing integration specs handle table cleanup: an explicit teardown per suite.
 
-**Decision:** _[pending]_
+**Decision:** A (MinIO, Redis e FFmpeg reais nos specs de integração)
+
+**Libraries:** — _(infra do Compose; sem dependência npm nova)_
 
 ---
 
@@ -298,12 +318,12 @@ _Subprojects in scope:_
 
 | ID | Scope | Decision | Recommendation | Choice |
 |----|-------|----------|---------------|--------|
-| TD-01 | Backend | Background Job Queue Technology | A (BullMQ + Redis) | _[pending]_ |
-| TD-02 | Cross-layer | 10GB Upload Strategy | A (Presigned S3 multipart) | _[pending]_ |
-| TD-03 | Backend | Object Storage Client and Bucket/Key Layout | A (AWS SDK v3, single bucket with prefixes) | _[pending]_ |
-| TD-04 | Backend | Video Worker Execution Model | A (Separate service, Nest standalone context) | _[pending]_ |
-| TD-05 | Backend | Metadata Extraction and Thumbnail Generation | A (Direct ffprobe/ffmpeg via child_process) | _[pending]_ |
-| TD-06 | Cross-layer | Unique Video URL Identifier | A (Random short id via node:crypto) | _[pending]_ |
-| TD-07 | Cross-layer | Video Delivery — Streaming and Download | C (Range proxy for stream, presigned redirect for download) | _[pending]_ |
-| TD-08 | Backend | Video Status Lifecycle and Failure Handling | A (draft → processing → ready \| failed) | _[pending]_ |
-| TD-09 | Backend | Integration Testing Strategy for Storage and Queue | A (Real MinIO/Redis/FFmpeg in integration specs) | _[pending]_ |
+| TD-01 | Backend | Background Job Queue Technology | A (BullMQ + Redis) | A (BullMQ + Redis) |
+| TD-02 | Cross-layer | 10GB Upload Strategy | A (Presigned S3 multipart) | A (Presigned S3 multipart upload) |
+| TD-03 | Backend | Object Storage Client and Bucket/Key Layout | A (AWS SDK v3, single bucket with prefixes) | A (AWS SDK v3 + presigner, single bucket with prefixes) |
+| TD-04 | Backend | Video Worker Execution Model | A (Separate service, Nest standalone context) | A (Separate Compose service, Nest standalone context) |
+| TD-05 | Backend | Metadata Extraction and Thumbnail Generation | A (Direct ffprobe/ffmpeg via child_process) | A (Direct ffprobe/ffmpeg via child_process) |
+| TD-06 | Cross-layer | Unique Video URL Identifier | A (Random short id via node:crypto) | A (Random short id via node:crypto) |
+| TD-07 | Cross-layer | Video Delivery — Streaming and Download | C (Range proxy for stream, presigned redirect for download) | C (Range proxy for stream, presigned redirect for download) |
+| TD-08 | Backend | Video Status Lifecycle and Failure Handling | A (draft → processing → ready \| failed) | A (draft → processing → ready \| failed) |
+| TD-09 | Backend | Integration Testing Strategy for Storage and Queue | A (Real MinIO/Redis/FFmpeg in integration specs) | A (Real MinIO/Redis/FFmpeg in integration specs) |

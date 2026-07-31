@@ -1,19 +1,15 @@
 ---
 kind: phase
 name: phase-03-videos
-status: dirty
-issue_count: 6
+status: clean
+issue_count: 0
 sources_mtime:
-  docs/phases/phase-03-videos/context.md: "2026-07-31T19:52:00-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-07-31T19:36:39-03:00"
-issues:
-  - MD-1
-  - IC-1
-  - IC-2
-  - DG-1
-  - DG-2
-  - AM-1
-advisories: []
+  docs/phases/phase-03-videos/context.md: "2026-07-31T20:04:00-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-07-31T20:01:00-03:00"
+  docs/phases/phase-03-videos/library-refs.md: "2026-07-31T20:03:00-03:00"
+issues: []
+advisories:
+  - ADV-1
 ---
 
 # phase-03-videos — Validation
@@ -22,33 +18,23 @@ advisories: []
 
 ### Inconsistencies
 
-**IC-1 — Testing guide prescribes local-filesystem storage, phase decides MinIO.**
-`.claude/skills/testing-guide-nestjs-project/references/external-systems.md` § "Object Storage — Local Filesystem" states the strategy is "Local filesystem storage in development and tests. S3 in production", with a `STORAGE_CONFIG` / `driver: 'local'` setup pattern. TD-03 decides an S3-compatible client against MinIO running in Compose, and TD-09 decides integration specs drive that MinIO for real. A guide that tells the implementer to build a local-filesystem adapter will produce a storage layer that never exercises presigning, multipart or range reads — the three mechanisms this phase depends on. The two cannot both stand.
-
-**IC-2 — Testing guide records the queue technology as TBD.**
-The same reference file § "Message Queue — Real (Docker)" says "The specific technology is TBD per the architecture diagram (likely BullMQ with Redis or RabbitMQ)". `CLAUDE.md` § Architecture likewise lists "**Message Queue** (TBD)". TD-01 closes this decision. Both documents must name the chosen technology once the TD is decided, or the next phase re-opens a settled decision.
+_None._
 
 ### Ambiguities
 
-**AM-1 — "sem impacto na performance" has no measurable acceptance criterion.**
-The capability bullet "Upload de vídeos com suporte a arquivos de até 10GB sem impacto na performance" states an intent, not a testable threshold. TD-02 answers the architectural half (bytes bypass the API), but nothing in the phase artifacts states how an implementer proves it. Without a concrete criterion, the deliverable is unfalsifiable and any implementation can claim to satisfy it.
+_None._
 
 ### Missing Decisions
 
-**MD-1 — All nine TDs are still `pending`.**
-`docs/decisions/technical-decisions-phase-03-videos.md` carries `status: pending` in its frontmatter and every TD's `**Decision:**` field reads `_[pending]_`. `plan-build` cannot render Technical Specifications from recommendations alone — the Data Model, API Contracts and Events/Messages subsections depend on which option was actually chosen. Blocks the build stage.
+_None._
 
 ### Dependency Gaps
 
-**DG-1 — No library versions pinned for the new stack.**
-Every TD's `**Libraries:**` field is empty. The phase introduces at least a queue client, an S3 client and a presigner, none of which exist in `nestjs-project/package.json`. Per the project convention that library APIs are confirmed against the installed version via context7 before implementation, the versions must be fixed and recorded in `library-refs.md` before SIs can cite concrete APIs. Note the non-obvious constraint already surfaced during research: `@nestjs/bullmq@11` peer-requires `bullmq@^3 || ^4 || ^5`, so the current `bullmq@6` is not installable under that wrapper.
-
-**DG-2 — Video entity has no owner path to the authenticated user.**
-The phase requires videos to belong to a channel, and Fase 02 established a 1:1 `User → Channel` relation. But `ChannelsModule` currently exports `TypeOrmModule` and `ChannelsService`, and `ChannelsService` exposes only `createChannel(userId, email)`. There is no read path from an authenticated user's JWT (`sub` = user id) to their channel id, which every upload endpoint in this phase needs to resolve an owner. The gap must be closed by an explicit SI, or the video module will reach into the channels repository directly and break the module boundary the project's Working Principles mandate.
+_None._
 
 ### Inherited Constraint Conflicts
 
-_Covered by IC-1 and IC-2 — both originate in artifacts inherited from prior phases._
+_None._
 
 ### Unresolved Open Questions
 
@@ -58,6 +44,27 @@ _None._
 
 _Not applicable — backend-only phase, no screen inventory in scope._
 
+## Advisories
+
+**ADV-1 — A worker that dies mid-job leaves the row stranded in `processing`.**
+Accepted knowingly in TD-08: BullMQ owns the retry cycle and the database owns the outcome, so a hard worker crash between "job picked up" and "status written" leaves no actor responsible for the transition. Not a blocker for this phase — the row is inert, not corrupt, and no delivery endpoint serves a non-`ready` video. A reaper that re-enqueues rows stuck in `processing` beyond a threshold belongs to a later phase. Recorded so the gap is a known trade-off rather than an oversight.
+
 ## Resolved Issues
 
-_No issues resolved yet._
+**MD-1 — All nine TDs were `pending`.** _Resolved._
+Decisions taken with the user and written into `docs/decisions/technical-decisions-phase-03-videos.md`; frontmatter flipped to `status: decided`. The four decisions with genuinely competing options (TD-01 queue, TD-02 upload, TD-06 unique id, TD-07 delivery) were put to the user explicitly; the remaining five follow their documented recommendation. `context.md` → `## Decisions Index` patched to `decided`.
+
+**IC-1 — Testing guide prescribed local-filesystem storage against TD-03's MinIO.** _Resolved._
+`.claude/skills/testing-guide-nestjs-project/references/external-systems.md` § "Object Storage" rewritten from the local-filesystem adapter to real MinIO in Docker, with the rationale (a filesystem adapter cannot exercise presigning, multipart or range reads) and the `forcePathStyle: true` requirement recorded. The section now cites TD-03 and TD-09 as its source.
+
+**IC-2 — Queue technology recorded as TBD in two places.** _Resolved._
+The same reference file § "Message Queue" now names BullMQ + Redis, carries the `bullmq@^5` peer constraint, and replaces the illustrative test snippet with the `obliterate` isolation pattern. `CLAUDE.md` § Architecture and `docs/diagrams/software-arch.mermaid` both changed from `Message Queue (TBD)` to `Redis + BullMQ`.
+
+**DG-1 — No library versions pinned.** _Resolved._
+`library-refs.md` created with four pinned packages and three infrastructure images, each traced to its TD, plus the confirmed API surface for every one of them from the official documentation via context7. Three non-obvious constraints are recorded: the `bullmq@^5` peer bound on `@nestjs/bullmq@11`, `ioredis` resolving transitively through bullmq, and `nanoid@6` being ESM-only against this project's CommonJS output.
+
+**DG-2 — No read path from the authenticated user to their owning channel.** _Resolved in plan._
+`ChannelsService` gains `findByUserId(userId)` and `ChannelsModule` exports it, so the video module resolves the owning channel across the module boundary instead of reaching into the channels repository. Assigned to **SI-03.4** with its own unit and integration coverage.
+
+**AM-1 — "sem impacto na performance" had no measurable criterion.** _Resolved._
+TD-02 gained a note fixing two structural, machine-independent criteria: no upload endpoint accepts a request body carrying video bytes (API inputs are metadata and part ETags only), and `PART_SIZE` is fixed at 100MB so a 10GB upload stays within the S3 10,000-part limit at 100 parts. Both are asserted in the e2e suite, so the deliverable is falsifiable.

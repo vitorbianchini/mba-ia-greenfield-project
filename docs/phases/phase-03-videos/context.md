@@ -48,15 +48,15 @@ sources_mtime:
 
 | Ref | Source | Scope | Topic | Status | Decision | Libraries |
 |-----|--------|-------|-------|--------|----------|-----------|
-| phase-03-videos/TD-01 | technical-decisions-phase-03-videos.md | Backend | Background Job Queue Technology | pending | — | — |
-| phase-03-videos/TD-02 | technical-decisions-phase-03-videos.md | Cross-layer | 10GB Upload Strategy | pending | — | — |
-| phase-03-videos/TD-03 | technical-decisions-phase-03-videos.md | Backend | Object Storage Client and Bucket/Key Layout | pending | — | — |
-| phase-03-videos/TD-04 | technical-decisions-phase-03-videos.md | Backend | Video Worker Execution Model | pending | — | — |
-| phase-03-videos/TD-05 | technical-decisions-phase-03-videos.md | Backend | Video Metadata Extraction and Thumbnail Generation | pending | — | — |
-| phase-03-videos/TD-06 | technical-decisions-phase-03-videos.md | Cross-layer | Unique Video URL Identifier | pending | — | — |
-| phase-03-videos/TD-07 | technical-decisions-phase-03-videos.md | Cross-layer | Video Delivery — Streaming and Download | pending | — | — |
-| phase-03-videos/TD-08 | technical-decisions-phase-03-videos.md | Backend | Video Status Lifecycle and Processing Failure Handling | pending | — | — |
-| phase-03-videos/TD-09 | technical-decisions-phase-03-videos.md | Backend | Integration Testing Strategy for Storage and Queue | pending | — | — |
+| phase-03-videos/TD-01 | technical-decisions-phase-03-videos.md | Backend | Background Job Queue Technology | decided | A (BullMQ + Redis) | `@nestjs/bullmq@^11.0.4`, `bullmq@^5.81.3` |
+| phase-03-videos/TD-02 | technical-decisions-phase-03-videos.md | Cross-layer | 10GB Upload Strategy | decided | A (Presigned S3 multipart upload) | — |
+| phase-03-videos/TD-03 | technical-decisions-phase-03-videos.md | Backend | Object Storage Client and Bucket/Key Layout | decided | A (AWS SDK v3 + presigner, bucket único com prefixos) | `@aws-sdk/client-s3@^3.1101.0`, `@aws-sdk/s3-request-presigner@^3.1101.0` |
+| phase-03-videos/TD-04 | technical-decisions-phase-03-videos.md | Backend | Video Worker Execution Model | decided | A (serviço Compose separado, standalone context) | — |
+| phase-03-videos/TD-05 | technical-decisions-phase-03-videos.md | Backend | Video Metadata Extraction and Thumbnail Generation | decided | A (ffprobe/ffmpeg via child_process) | — |
+| phase-03-videos/TD-06 | technical-decisions-phase-03-videos.md | Cross-layer | Unique Video URL Identifier | decided | A (short id via node:crypto) | — |
+| phase-03-videos/TD-07 | technical-decisions-phase-03-videos.md | Cross-layer | Video Delivery — Streaming and Download | decided | C (Range proxy no stream, redirect no download) | — |
+| phase-03-videos/TD-08 | technical-decisions-phase-03-videos.md | Backend | Video Status Lifecycle and Processing Failure Handling | decided | A (draft → processing → ready \| failed) | — |
+| phase-03-videos/TD-09 | technical-decisions-phase-03-videos.md | Backend | Integration Testing Strategy for Storage and Queue | decided | A (MinIO/Redis/FFmpeg reais em integração) | — |
 
 _Source files:_
 
@@ -84,7 +84,7 @@ _(current-phase TDs only)_
 
 **Recommendation:** BullMQ + Redis is the only option that gives declarative retry/backoff and worker concurrency without hand-written lifecycle code, and its NestJS wrapper is maintained by the Nest core team against NestJS 11, which the project already runs. The cost is one small Redis container in Compose. pg-boss's "no new infrastructure" advantage is real but is paid for with a hand-rolled worker lifecycle and by putting a polling loop on the same PostgreSQL that serves API traffic. The `bullmq@^5` peer constraint is a version pin, not a functional limitation.
 
-**Libraries:** —
+**Libraries:** `@nestjs/bullmq@^11.0.4`, `bullmq@^5.81.3`
 
 ### phase-03-videos/TD-02
 
@@ -96,7 +96,7 @@ _(current-phase TDs only)_
 
 **Recommendation:** AWS SDK v3 with a single bucket and prefixes. The project has already decided to run MinIO as a stand-in for S3, so the client must be the S3 client; the MinIO-specific client optimises ergonomics at the cost of the exact portability the architecture was designed for. A single bucket with `videos/` and `thumbnails/` prefixes keeps bootstrap to one `CreateBucket` call and matches how every object is reached in this phase.
 
-**Libraries:** —
+**Libraries:** `@aws-sdk/client-s3@^3.1101.0`, `@aws-sdk/s3-request-presigner@^3.1101.0`
 
 ### phase-03-videos/TD-04
 
@@ -199,7 +199,9 @@ _(current-phase TDs only)_
 
 | Capability | Status | Rationale | TD refs |
 |-----------|--------|-----------|---------|
-| (empty on first assembly — plan-resolve appends rows as capabilities are marked) | | | |
+| _None._ | | | |
+
+All nine capabilities of the phase are in scope and covered by a TD; nothing is deferred.
 
 ## Testing Requirements
 
@@ -222,7 +224,7 @@ From the `testing-guide-nestjs-project` skill, §3 Feature Implementation Checkl
 
 Relevant §2 "worth testing" entries for this phase: service-to-external-system contracts (storage uploads, queue publishing), module DI wiring for `BullModule.registerQueue()`, race conditions on concurrent uploads, and entity constraints.
 
-**Known conflict:** `references/external-systems.md` currently prescribes a local-filesystem adapter for object storage in tests and describes the queue technology as TBD. Both statements predate this phase and contradict the storage and queue decisions being made here. Recorded as an inherited constraint conflict for `plan-validate`.
+**Resolved conflict:** `references/external-systems.md` previously prescribed a local-filesystem adapter for object storage and described the queue technology as TBD. Both predated this phase and contradicted TD-01/TD-03/TD-09. `plan-resolve` rewrote both sections to MinIO and BullMQ + Redis (see `validation.md` → Resolved Issues, IC-1 and IC-2).
 
 ### next-frontend
 
