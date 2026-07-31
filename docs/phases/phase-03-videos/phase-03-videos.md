@@ -501,6 +501,18 @@ Headers: `Content-Range: bytes <start>-<end>/<total>`, `Content-Length`, `Conten
 
 ---
 
+#### GET /videos/{publicId}/thumbnail (SI-03.9)
+
+**Public — no authentication.**
+
+Serves the JPEG frame extracted during processing, streamed from object storage. Added during implementation: `GET /videos/{publicId}` advertises a `thumbnail_url`, and without this route that field would point at nothing, leaving the "thumbnail gerada" deliverable unobservable over HTTP.
+
+**Response 200:** the JPEG bytes, `Content-Type: image/jpeg`.
+
+**Error responses:** 404 VIDEO_NOT_FOUND (unknown video, or a video whose thumbnail has not been generated yet)
+
+---
+
 #### GET /videos/{publicId}/download (SI-03.10)
 
 **Public — no authentication.**
@@ -531,6 +543,7 @@ Headers: `Content-Range: bytes <start>-<end>/<total>`, `Content-Length`, `Conten
 | DELETE /videos/uploads/{videoId} | | ✓ | ✓ | Same ownership check |
 | GET /videos/{publicId} | ✓ | | | Anonymous viewing per the project plan |
 | GET /videos/{publicId}/stream | ✓ | | | Anonymous viewing |
+| GET /videos/{publicId}/thumbnail | ✓ | | | Anonymous viewing |
 | GET /videos/{publicId}/download | ✓ | | | Anonymous download |
 
 Ownership is enforced in `VideosService`, not in a guard: it is a domain rule, and `.claude/rules/nestjs-layer-separation.md` keeps domain rules in services.
