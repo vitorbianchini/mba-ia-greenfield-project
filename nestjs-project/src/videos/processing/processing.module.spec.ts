@@ -6,9 +6,11 @@ import queueConfig from '../../config/queue.config';
 import storageConfig from '../../config/storage.config';
 import videoConfig from '../../config/video.config';
 import { AppModule } from '../../app.module';
+import { closeQueues } from '../../test/close-queue';
 import { Video } from '../entities/video.entity';
 import { FfmpegService } from './ffmpeg.service';
 import { ProcessingModule } from './processing.module';
+import { VIDEO_PROCESSING_QUEUE } from '../videos.constants';
 import { VideoProcessingProcessor } from './video-processing.processor';
 import { VideoProcessingService } from './video-processing.service';
 
@@ -34,6 +36,7 @@ describe('ProcessingModule', () => {
     expect(moduleRef.get(VideoProcessingService)).toBeDefined();
     expect(moduleRef.get(VideoProcessingProcessor)).toBeDefined();
 
+    await closeQueues(moduleRef, VIDEO_PROCESSING_QUEUE);
     await moduleRef.close();
   }, 30_000);
 

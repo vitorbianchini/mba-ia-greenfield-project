@@ -40,20 +40,18 @@ describe('Database migrations (integration)', () => {
 
     await dataSource.initialize();
 
-    await Promise.all([
-      ...MANAGED_TABLES.map((table) =>
-        dataSource.query(`DROP TABLE IF EXISTS "${table}" CASCADE`),
-      ),
-      dataSource.query(`DROP TABLE IF EXISTS "migrations" CASCADE`),
-    ]);
+    // Sequential, not Promise.all: concurrent DROP TABLE ... CASCADE on tables
+    // linked by foreign keys deadlock against each other, and a half-dropped
+    // schema then fails the migration with "relation already exists".
+    for (const table of [...MANAGED_TABLES, 'migrations']) {
+      await dataSource.query(`DROP TABLE IF EXISTS "${table}" CASCADE`);
+    }
 
     // Dropping the tables leaves the enum type behind — a table depends on its
     // type, not the reverse — and CreateAuthTokens.up() issues a bare CREATE TYPE.
-    await Promise.all(
-      MANAGED_ENUM_TYPES.map((type) =>
-        dataSource.query(`DROP TYPE IF EXISTS "public"."${type}" CASCADE`),
-      ),
-    );
+    for (const type of MANAGED_ENUM_TYPES) {
+      await dataSource.query(`DROP TYPE IF EXISTS "public"."${type}" CASCADE`);
+    }
   });
 
   afterAll(async () => {

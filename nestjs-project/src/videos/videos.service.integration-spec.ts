@@ -88,6 +88,9 @@ describe('VideosService (integration)', () => {
 
   afterAll(async () => {
     await queue.obliterate({ force: true });
+    // See src/test/close-queue.ts: BullMQ crashes the process on a listener-less
+    // 'error' event, which a closing connection reliably produces.
+    queue.on('error', () => undefined);
     await queue.close();
     await dataSource.destroy();
   });
