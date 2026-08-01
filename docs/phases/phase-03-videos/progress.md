@@ -57,3 +57,27 @@
 - **Status:** completed
 - **Tests:** 12/12 passing (openapi-export.integration-spec.ts — 3 new: every video path has a summary, the full seven-endpoint surface is documented, and only the upload endpoints require a bearer token)
 - **Observations:** The bearer-token assertion is the documentation-level counterpart of the Authorization Matrix: it fails if a viewing endpoint ever stops being anonymous, which the project plan requires. `CLAUDE.md` (root and `nestjs-project/`) and `README.md` were updated to describe the pipeline, the new Compose services and the real-infrastructure testing policy.
+
+---
+
+## Defects the full-suite run exposed
+
+Running the whole suite together surfaced four problems that per-SI runs had not, each fixed at its root rather than worked around.
+
+1. **Deadlock in the migration suite's teardown.** `beforeAll` dropped the managed tables with `Promise.all`. Once `videos` added a foreign key to `channels`, two concurrent `DROP TABLE ... CASCADE` statements deadlocked; the half-dropped schema then failed the next migration with `relation "channels" already exists` and cascaded into the channels entity suite. Drops are now sequential.
+
+2. **`VideosModule` compilation test built a fake `DataSource`.** `ChannelsModule` injects both a repository and the `DataSource`, so the graph only resolves against a real connection — the same shape `channels.module.spec.ts` already used.
+
+3. **BullMQ crashed the runner at teardown.** BullMQ re-emits ioredis connection errors on the `Queue`, and an `EventEmitter` with no `error` listener terminates the process. Closing a module reliably produced `Unhandled error. (Error: Connection is closed.)`, killing the run after 26 green files. `src/test/close-queue.ts` attaches the listener before closing, which is what the BullMQ docs prescribe.
+
+4. **`beforeAll` hooks outgrew Jest's 5s default.** `AppModule` now connects to Redis and MinIO at boot and `StorageService.onModuleInit` bootstraps the bucket, so booting a testing module legitimately takes longer. It first showed up in the e2e suites, then intermittently in `auth.service.integration-spec.ts`, which passed one full run and timed out the next under load. Both configs now declare `testTimeout: 60000` — `test/jest-e2e.json` and the Jest block in `package.json` — instead of scattering per-hook timeouts. `maxWorkers: 1` was added to the e2e config to make explicit the serialization those suites already required by sharing one database. The assertions themselves never failed; only the hook budget was wrong for suites whose contract is to talk to real infrastructure.
+
+## Definition of Done
+
+| Gate | Result |
+|------|--------|
+| `npm test -- --runInBand` | 35 suites, 233 tests passing |
+| `npm run test:e2e` | 4 suites, 75 tests passing |
+| `npx tsc --noEmit` | exit 0 |
+| `npm run lint` | exit 0 (54 warnings, all from rules the project deliberately sets to `warn`) |
+| `npm run build` | exit 0 |
