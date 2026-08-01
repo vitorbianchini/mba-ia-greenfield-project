@@ -1,3 +1,4 @@
+import { QueryFailedError } from 'typeorm';
 import {
   ChannelNotFoundException,
   InvalidRangeException,
@@ -45,12 +46,14 @@ function makeVideo(overrides: Partial<Video> = {}): Video {
   } as Video;
 }
 
-function build(overrides: {
-  repository?: any;
-  channels?: any;
-  storage?: any;
-  queue?: any;
-} = {}) {
+function build(
+  overrides: {
+    repository?: any;
+    channels?: any;
+    storage?: any;
+    queue?: any;
+  } = {},
+) {
   const repository = overrides.repository ?? {
     create: jest.fn((v: Partial<Video>) => v as Video),
     save: jest.fn((v: Video) => Promise.resolve(v)),
@@ -76,7 +79,9 @@ function build(overrides: {
     presignGetObject: jest.fn().mockResolvedValue('https://storage/signed'),
     uploadUrlTtlSeconds: 3600,
   };
-  const queue = overrides.queue ?? { add: jest.fn().mockResolvedValue(undefined) };
+  const queue = overrides.queue ?? {
+    add: jest.fn().mockResolvedValue(undefined),
+  };
 
   const service = new VideosService(
     repository,
@@ -101,9 +106,9 @@ describe('VideosService', () => {
         channels: { findByUserId: jest.fn().mockResolvedValue(null) },
       });
 
-      await expect(service.initiateUpload('user-id', uploadDto)).rejects.toThrow(
-        ChannelNotFoundException,
-      );
+      await expect(
+        service.initiateUpload('user-id', uploadDto),
+      ).rejects.toThrow(ChannelNotFoundException);
     });
 
     it('rejects a file above the configured maximum', async () => {
@@ -181,7 +186,7 @@ describe('VideosService', () => {
 
     it('retries with a new public id on a unique-constraint collision', async () => {
       const collision = Object.assign(
-        new (require('typeorm').QueryFailedError)('INSERT', [], new Error()),
+        new QueryFailedError('INSERT', [], new Error()),
         { code: '23505', detail: 'Key (public_id)=(abc) already exists.' },
       );
       const repository = {
@@ -305,7 +310,7 @@ describe('VideosService', () => {
       expect(repository.remove).toHaveBeenCalledWith(video);
     });
 
-    it('refuses to abort another user\'s upload', async () => {
+    it("refuses to abort another user's upload", async () => {
       const { service, repository, storage } = build();
       repository.findOne.mockResolvedValue(
         makeVideo({ channel: { user_id: 'someone-else' } as Video['channel'] }),

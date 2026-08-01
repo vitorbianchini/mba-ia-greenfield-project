@@ -73,7 +73,9 @@ describe('StorageService (integration)', () => {
       expect(storageService.buildSourceKey('abc', '.mp4')).toBe(
         'videos/abc/source.mp4',
       );
-      expect(storageService.buildSourceKey('abc', '')).toBe('videos/abc/source');
+      expect(storageService.buildSourceKey('abc', '')).toBe(
+        'videos/abc/source',
+      );
       expect(storageService.buildThumbnailKey('abc')).toBe(
         'thumbnails/abc.jpg',
       );
@@ -135,7 +137,11 @@ describe('StorageService (integration)', () => {
   describe('range reads', () => {
     it('returns the exact slice with a correct Content-Range', async () => {
       const key = trackedKey('.txt');
-      await storageService.putObject(key, Buffer.from('test content'), 'text/plain');
+      await storageService.putObject(
+        key,
+        Buffer.from('test content'),
+        'text/plain',
+      );
 
       const { body, contentLength, contentRange } =
         await storageService.getObjectRange(key, 0, 3);
@@ -147,9 +153,16 @@ describe('StorageService (integration)', () => {
 
     it('supports an open-ended range', async () => {
       const key = trackedKey('.txt');
-      await storageService.putObject(key, Buffer.from('test content'), 'text/plain');
+      await storageService.putObject(
+        key,
+        Buffer.from('test content'),
+        'text/plain',
+      );
 
-      const { body, contentRange } = await storageService.getObjectRange(key, 5);
+      const { body, contentRange } = await storageService.getObjectRange(
+        key,
+        5,
+      );
 
       expect(contentRange).toBe('bytes 5-11/12');
       expect((await streamToBuffer(body)).toString()).toBe('content');
@@ -157,7 +170,11 @@ describe('StorageService (integration)', () => {
 
     it('returns the whole object when no range is given', async () => {
       const key = trackedKey('.txt');
-      await storageService.putObject(key, Buffer.from('test content'), 'text/plain');
+      await storageService.putObject(
+        key,
+        Buffer.from('test content'),
+        'text/plain',
+      );
 
       const { body, contentLength, contentRange } =
         await storageService.getObjectRange(key);
@@ -171,7 +188,11 @@ describe('StorageService (integration)', () => {
   describe('presigned download', () => {
     it('produces a URL that serves the object as an attachment', async () => {
       const key = trackedKey('.txt');
-      await storageService.putObject(key, Buffer.from('downloadable'), 'text/plain');
+      await storageService.putObject(
+        key,
+        Buffer.from('downloadable'),
+        'text/plain',
+      );
 
       const url = await storageService.presignGetObject(key, {
         downloadFilename: 'my video.mp4',
@@ -194,7 +215,9 @@ describe('StorageService (integration)', () => {
 
       const url = await storageService.presignGetObject(key);
 
-      expect(new URL(url).host).toBe(new URL(storageConfig().publicEndpoint).host);
+      expect(new URL(url).host).toBe(
+        new URL(storageConfig().publicEndpoint).host,
+      );
     });
   });
 

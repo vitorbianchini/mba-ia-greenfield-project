@@ -265,7 +265,11 @@ function isPublicIdCollision(err: unknown): boolean {
     code?: string;
     detail?: string;
   };
-  return code === '23505' && typeof detail === 'string' && detail.includes('public_id');
+  return (
+    code === '23505' &&
+    typeof detail === 'string' &&
+    detail.includes('public_id')
+  );
 }
 
 export function parseRangeHeader(

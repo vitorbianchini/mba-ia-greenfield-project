@@ -192,13 +192,19 @@ export class VideosController {
     description:
       'Returns the public metadata of a video. Anonymous access is allowed.',
   })
-  @ApiResponse({ status: 200, description: 'Video found', type: VideoResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Video found',
+    type: VideoResponseDto,
+  })
   @ApiResponse({
     status: 404,
     description: 'Video not found',
     schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
   })
-  async findOne(@Param('publicId') publicId: string): Promise<VideoResponseDto> {
+  async findOne(
+    @Param('publicId') publicId: string,
+  ): Promise<VideoResponseDto> {
     const video = await this.videosService.findByPublicId(publicId);
     return VideoResponseDto.fromEntity(video);
   }
@@ -212,7 +218,10 @@ export class VideosController {
       'Streams the video honouring the HTTP Range header, so playback starts without downloading the whole file. Anonymous access is allowed.',
   })
   @ApiResponse({ status: 200, description: 'Full video stream' })
-  @ApiResponse({ status: 206, description: 'Partial content for the requested range' })
+  @ApiResponse({
+    status: 206,
+    description: 'Partial content for the requested range',
+  })
   @ApiResponse({
     status: 404,
     description: 'Video not found',

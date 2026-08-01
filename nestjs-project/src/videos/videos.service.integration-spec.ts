@@ -215,7 +215,9 @@ describe('VideosService (integration)', () => {
       const jobs = await queue.getJobs(['waiting', 'delayed', 'active']);
       expect(jobs).toHaveLength(1);
 
-      await storageService.deleteObject(`videos/${initiated.video_id}/source.mp4`);
+      await storageService.deleteObject(
+        `videos/${initiated.video_id}/source.mp4`,
+      );
     });
   });
 

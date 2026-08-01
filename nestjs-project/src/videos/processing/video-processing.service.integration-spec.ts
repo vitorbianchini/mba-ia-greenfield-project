@@ -106,10 +106,7 @@ describe('VideoProcessingService (integration)', () => {
     });
   });
 
-  async function seedVideo(
-    status: VideoStatus,
-    body: Buffer,
-  ): Promise<Video> {
+  async function seedVideo(status: VideoStatus, body: Buffer): Promise<Video> {
     const id = randomUUID();
     const sourceKey = `videos/${id}/source.mp4`;
     await storageService.putObject(sourceKey, body, 'video/mp4');

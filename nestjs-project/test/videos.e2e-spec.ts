@@ -245,7 +245,11 @@ describe('Videos (e2e)', () => {
       const response = await request(app.getHttpServer())
         .post('/videos/uploads')
         .set('Authorization', `Bearer ${token}`)
-        .send({ filename: 'x.zip', size_bytes: 1024, content_type: 'application/zip' })
+        .send({
+          filename: 'x.zip',
+          size_bytes: 1024,
+          content_type: 'application/zip',
+        })
         .expect(400);
 
       expect(response.body.error).toBe('VALIDATION_ERROR');

@@ -9,5 +9,8 @@ export default registerAs('video', () => ({
     process.env.VIDEO_THUMBNAIL_TIMESTAMP_SECONDS || '1',
     10,
   ),
-  processingAttempts: parseInt(process.env.VIDEO_PROCESSING_ATTEMPTS || '3', 10),
+  processingAttempts: parseInt(
+    process.env.VIDEO_PROCESSING_ATTEMPTS || '3',
+    10,
+  ),
 }));

@@ -12,9 +12,7 @@ export interface VideoProcessingJobData {
 export class VideoProcessingProcessor extends WorkerHost {
   private readonly logger = new Logger(VideoProcessingProcessor.name);
 
-  constructor(
-    private readonly videoProcessingService: VideoProcessingService,
-  ) {
+  constructor(private readonly videoProcessingService: VideoProcessingService) {
     super();
   }
 

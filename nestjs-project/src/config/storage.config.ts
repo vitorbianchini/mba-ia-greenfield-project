@@ -4,7 +4,8 @@ export default registerAs('storage', () => ({
   endpoint: process.env.STORAGE_ENDPOINT || 'http://minio:9000',
   // Presigned URLs are consumed outside the Compose network, so the signed
   // host must be the one the client can reach.
-  publicEndpoint: process.env.STORAGE_PUBLIC_ENDPOINT || 'http://localhost:9000',
+  publicEndpoint:
+    process.env.STORAGE_PUBLIC_ENDPOINT || 'http://localhost:9000',
   region: process.env.STORAGE_REGION || 'us-east-1',
   bucket: process.env.STORAGE_BUCKET || 'streamtube',
   accessKey: process.env.STORAGE_ACCESS_KEY || 'streamtube',
