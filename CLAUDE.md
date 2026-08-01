@@ -10,9 +10,9 @@ More info in the project overview: [docs/project-plan.md](docs/project-plan.md)
 
 This is a monorepo with two main areas:
 
-- `nestjs-project/` — Backend API (NestJS 11, TypeScript, Express). Contains modules for users, channels, videos, comments, etc.
+- `nestjs-project/` — Backend API (NestJS 11, TypeScript, Express). Modules: `auth/`, `users/`, `channels/`, `videos/` (upload, delivery and the `processing/` worker), `storage/`, `mail/`, `common/`, `config/`, `database/`, `worker/` (the video-worker entrypoint).
 - `docs/` — Project documentation, architecture diagrams, and planning.
-- `next-frontend/` (Next.js) — not yet initialized
+- `next-frontend/` — Frontend (Next.js 16, App Router). Fases 01–02 delivered; video UI arrives in Fases 04–05.
 
 ## Architecture (C4 Container Diagram)
 
@@ -25,6 +25,51 @@ See `docs/diagrams/software-arch.mermaid` for the full diagram. Key containers:
 - **Object Storage** (S3/MinIO) → video files and thumbnails
 - **Message Queue** (Redis + BullMQ) → video processing job queue
 - **Email Service** (SMTP) → account confirmation and password recovery
+
+## Video Pipeline (Fase 03)
+
+Video ingestion is split across three containers so that no large transfer ever
+sits on the API's event loop. Decisions are recorded in
+`docs/decisions/technical-decisions-phase-03-videos.md`.
+
+**Upload — bytes never pass through the API.** The client calls
+`POST /videos/uploads` with file *metadata only*; the API pre-registers the
+video as a `draft`, opens an S3 multipart upload and returns one presigned
+`UploadPart` URL per 100MB part. The client PUTs the parts straight to object
+storage and posts the ETags back to `POST /videos/uploads/{videoId}/complete`,
+which assembles the object, records the authoritative size from `headObject`,
+moves the video to `processing` and enqueues the job.
+`DELETE /videos/uploads/{videoId}` aborts an upload in flight. A 10GB file is
+103 parts, well under the S3 10,000-part cap.
+
+**Processing — a separate worker container.** The `video-worker` service runs a
+NestJS *standalone application context* (`src/worker/main.ts`, no HTTP
+listener). It consumes the `video-processing` BullMQ queue, downloads the
+source to a temp file, extracts duration/dimensions/codec with `ffprobe`, cuts
+a thumbnail with `ffmpeg`, uploads it, and flips the video to `ready`.
+
+> The processor lives in `src/videos/processing/processing.module.ts`, which
+> **`AppModule` must never import**. That absence is what guarantees the API
+> container does not compete for jobs, and a test asserts it.
+
+**Status lifecycle:** `draft → processing → ready | failed`. BullMQ owns the
+retry cycle (3 attempts, exponential backoff); the database owns the outcome.
+`@OnWorkerEvent('failed')` fires on *every* failed attempt, so `failed` is only
+written once `attemptsMade` reaches the configured total — otherwise a
+transient failure would mark a video failed mid-retry.
+
+**Delivery — split by workload.** `GET /videos/{publicId}/stream` proxies the
+object with HTTP Range support and answers `206 Partial Content`, keeping the
+API in the request path for the visibility rules and view counting that Fases
+04 and 05 will need. `GET /videos/{publicId}/download` answers `302` to a
+short-lived presigned URL so the full-file transfer is served by storage.
+`GET /videos/{publicId}` and `GET /videos/{publicId}/thumbnail` are public too:
+anonymous viewing is a project-plan requirement.
+
+**Storage layout:** one bucket (`streamtube`), keys `videos/{videoId}/source{ext}`
+and `thumbnails/{videoId}.jpg`. The client is `@aws-sdk/client-s3` with
+`forcePathStyle: true` — mandatory for MinIO, and the reason production can
+switch to real S3 by changing environment variables only.
 
 ## Docker Networking
 

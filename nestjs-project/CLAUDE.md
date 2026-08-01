@@ -13,6 +13,11 @@ docker compose ps   # all services must show status "running"
 Then verify each infrastructure service is actually ready to accept connections — not just running:
 
 - **PostgreSQL:** `docker compose exec db pg_isready -U streamtube` — expect `accepting connections`
+- **MinIO** and **Redis:** both declare healthchecks in `compose.yaml`; `docker compose ps` must show `(healthy)` for each before the API or the worker can start.
+
+The `video-worker` service is an application container, not infrastructure — it
+is part of "start the environment" only because the API's queue producer is
+useless without a consumer. It boots on `docker compose up -d` like the API.
 
 Only start the NestJS dev server (`npm run start:dev`) when the user **explicitly** asks to run the application — never as part of "start the environment".
 
@@ -33,7 +38,15 @@ docker compose exec nestjs-api npm run start:dev
 
 Services:
 - `nestjs-api` — NestJS API, port `3000`
+- `video-worker` — video processing worker (FFmpeg). No published port; runs `npm run start:worker:dev`, a NestJS standalone context with no HTTP listener
 - `db` — PostgreSQL 17, port `5432`, database `streamtube`, user/password `streamtube`
+- `mailpit` — SMTP capture, SMTP `1025`, UI `8025`
+- `minio` — S3-compatible object storage, API `9000`, console `9001`, user/password `streamtube`
+- `redis` — BullMQ broker, port `6379`
+
+The dev image carries `ffmpeg`, so `ffprobe` and `ffmpeg` are available to the
+API container as well. That is deliberate: the integration suite runs inside
+`nestjs-api` and exercises the real binaries instead of mocking them.
 
 All verification and teardown commands run on the **host machine**:
 
@@ -60,8 +73,10 @@ docker compose down
 
 ```bash
 npm run start:dev                        # Dev server with hot-reload
+npm run start:worker:dev                 # Video worker in watch mode (video-worker service)
 npm run build                            # Compile to dist/
 npm run start:prod                       # Run compiled build
+npm run start:worker:prod                # Run the compiled worker
 
 npm test                                 # Unit tests
 npm run test:watch                       # Unit tests in watch mode
@@ -92,6 +107,16 @@ docker compose exec nestjs-api npm run test:e2e   # already configured
 ```
 
 Parallel execution causes FK violations, deadlocks, and cross-suite contamination because suites truncate or seed shared tables concurrently.
+
+Integration and e2e suites also drive **real MinIO, real Redis and real FFmpeg**
+— never mocks. A mocked S3 client cannot catch a wrong `forcePathStyle`, a
+malformed multipart completion or an off-by-one `Content-Range`, which are
+exactly the failure modes of the video pipeline. Suites that touch the queue
+call `queue.obliterate({ force: true })` in `beforeEach`; suites that create
+objects delete their keys in `afterAll`.
+
+Video fixtures are generated at suite setup with
+`ffmpeg -f lavfi -i testsrc=...`, so no binary blob lives in the repository.
 
 During active development, run only the tests related to the file being changed (`npm test -- path/to/file.spec.ts`). Before declaring a task done, run the full suite — see the global `CLAUDE.md` → "Definition of Done (Technical)".
 

@@ -1,59 +1,59 @@
 # phase-03-videos — Progress
 
-**Status:** not started
-**SIs:** 0/11 completed
+**Status:** completed
+**SIs:** 11/11 completed
 
 ### SI-03.1 — Dependencies, Configuration Namespaces, and Docker Compose Infrastructure
-- **Status:** pending
-- **Tests:** —
-- **Observations:** —
+- **Status:** completed
+- **Tests:** 8/8 passing (env.validation.integration-spec.ts — 4 new covering the required storage keys, the Compose-compatible defaults, the 10GB/100MB video limits and a non-numeric REDIS_PORT)
+- **Observations:** `bullmq` had to be pinned to `^5.81.3`: `@nestjs/bullmq@11.0.4` peer-requires `^3 || ^4 || ^5`, and the registry's latest is `6.0.3`. `ioredis` is not installed directly — `bullmq@5` already depends on `5.11.1`. `ffmpeg` was added to `Dockerfile.dev` rather than to a worker-only image so the integration suite, which runs inside `nestjs-api`, can exercise the real binaries. The pre-existing `env.validation.integration-spec.ts` broke on the two new required variables and was fixed by extending its `requiredEnv` fixture, which is the correct outcome, not a workaround.
 
 ### SI-03.2 — Storage Module: S3-compatible Client and StorageService
-- **Status:** pending
-- **Tests:** —
-- **Observations:** —
+- **Status:** completed
+- **Tests:** 11/11 passing (storage.service.integration-spec.ts against real MinIO — 10 covering bucket bootstrap idempotency, key building, the full multipart lifecycle with two presigned parts, abort, three range-read shapes, presigned download with attachment disposition, and delete; storage.module.spec.ts — 1)
+- **Observations:** `forcePathStyle: true` is mandatory: without it the SDK builds `http://streamtube.minio:9000`, which does not resolve inside the Compose network. Presigned URLs are rewritten to `STORAGE_PUBLIC_ENDPOINT` because the real consumer is outside Compose; host and port sit outside the S3 signature, so the swap is safe. The integration suite runs *inside* the network, so it swaps the origin back before fetching — the first run failed with `ECONNREFUSED 127.0.0.1:9000` until that helper was added. The multipart test uses a 5MB first part because S3 rejects non-final parts below that floor.
 
 ### SI-03.3 — Video Entity, Status Enum, Public Id Generation, and Migration
-- **Status:** pending
-- **Tests:** —
-- **Observations:** —
+- **Status:** completed
+- **Tests:** 15/15 passing (public-id.util.spec.ts — 4 including 10,000 draws with no duplicate and full alphabet reach; video.entity.integration-spec.ts — 8; videos.module.spec.ts — 1; migrations.integration-spec.ts — 2 updated)
+- **Observations:** `size_bytes` is `bigint`, which the pg driver returns as a string. Keeping the TypeScript type as `string` avoids precision loss at 10GB, and a test asserts a 10GB round-trip. The migration generates `videos_status_enum`, so both `MANAGED_TABLES` and `MANAGED_ENUM_TYPES` in the migrations suite were extended — the enum-cleanup gap had already been fixed on `dev` in a separate bugfix branch. `cleanAllTables` now deletes videos first, since videos reference channels.
 
 ### SI-03.4 — Channel Lookup by Owner
-- **Status:** pending
-- **Tests:** —
-- **Observations:** —
+- **Status:** completed
+- **Tests:** 42/42 passing across channels + users (channels.service.spec.ts — 2 new; channels.service.integration-spec.ts — 2 new)
+- **Observations:** Resolves `DG-2` from validation.md. `ChannelsService` previously injected only `DataSource`; adding `Repository<Channel>` changed the constructor signature, so every call site in the existing specs was updated. Domain exceptions for the whole phase were added in this SI since later SIs share them.
 
 ### SI-03.5 — Upload Initiation with Draft Pre-registration
-- **Status:** pending
-- **Tests:** —
-- **Observations:** —
+- **Status:** completed
+- **Tests:** 30/30 unit (videos.service.spec.ts, covering initiate/complete/abort/stream/download plus 11 `parseRangeHeader` cases) and 5/5 integration (videos.service.integration-spec.ts against real MinIO and Redis)
+- **Observations:** The video id is minted with `randomUUID()` in the application instead of by the database, so the storage key is known before the first write and draft creation stays a single insert. Part count is asserted at an exact multiple, a non-exact multiple, and at 10GB (103 parts).
 
 ### SI-03.6 — Upload Completion, Abort, and Job Enqueue
-- **Status:** pending
-- **Tests:** —
-- **Observations:** —
+- **Status:** completed
+- **Tests:** covered by the same 30 unit + 5 integration specs above; the integration test asserts the assembled object, the authoritative size and exactly one enqueued job
+- **Observations:** `size_bytes` is overwritten from `headObject` rather than trusting the client-declared value — the unit test pins this by declaring 1024 and asserting 2048. Ownership is enforced in the service, not a guard, because it is a domain rule (`nestjs-layer-separation.md`). A retried completion throws `VIDEO_UPLOAD_NOT_IN_PROGRESS` and does not enqueue a second job.
 
 ### SI-03.7 — FFmpeg Metadata Extraction and Thumbnail Generation
-- **Status:** pending
-- **Tests:** —
-- **Observations:** —
+- **Status:** completed
+- **Tests:** 5/5 passing (ffmpeg.service.integration-spec.ts against a fixture generated by ffmpeg at suite setup)
+- **Observations:** `format.duration` arrives from ffprobe as a **string**; the mapping coerces explicitly and the test asserts `typeof === 'number'`. `-ss` is placed before `-i` so the seek is an input seek that jumps to the keyframe. `execFile` with an argument array means the path never reaches a shell. Fixtures are generated with `-f lavfi -i testsrc`, so no binary blob is versioned.
 
 ### SI-03.8 — Video Worker: Processor, Standalone Bootstrap, and Status Transitions
-- **Status:** pending
-- **Tests:** —
-- **Observations:** —
+- **Status:** completed
+- **Tests:** 13/13 passing (video-processing.processor.spec.ts — 5; video-processing.service.integration-spec.ts — 5 against real MinIO; processing.module.spec.ts — 2; worker.module.spec.ts — 1)
+- **Observations:** The `WorkerModule` compilation test caught a real defect: `autoLoadEntities: true` cannot resolve `Video#channel` when only `Video` is registered via `forFeature`, so the worker's DataSource now declares the closure `Video → Channel → User` explicitly. `@OnWorkerEvent('failed')` fires on every failed attempt, so `failed` is written only once `attemptsMade` reaches the configured total — three unit tests pin that boundary. `processing.module.spec.ts` asserts `AppModule` does not import `ProcessingModule`, which is what actually guarantees the API never consumes jobs. Verified live: the `video-worker` container boots and logs "Video worker started".
 
 ### SI-03.9 — Video Retrieval and Streaming with HTTP Range
-- **Status:** pending
-- **Tests:** —
-- **Observations:** —
+- **Status:** completed
+- **Tests:** 23/23 passing (videos.e2e-spec.ts, full pipeline over real infrastructure)
+- **Observations:** Added `GET /videos/:publicId/thumbnail`, which was not in the plan: the video resource advertises `thumbnail_url` and without the route that field pointed at nothing, leaving the thumbnail deliverable unobservable over HTTP. The plan's API Contracts and Authorization Matrix were updated to match. The e2e suite imports `ProcessingModule` with the processor stubbed out so it does not start a second BullMQ worker; processing is driven directly and is idempotent if the real worker container got there first. A `Buffer` is not a valid `BodyInit` under the e2e tsconfig, so fixtures are sent as `new Uint8Array(...)`.
 
 ### SI-03.10 — Video Download via Presigned Redirect
-- **Status:** pending
-- **Tests:** —
-- **Observations:** —
+- **Status:** completed
+- **Tests:** covered by the same 23 e2e specs; the download test follows the redirect and asserts the full file and the attachment disposition
+- **Observations:** The presigned URL carries `ResponseContentDisposition`, which is part of the signature, so the original filename survives the redirect. The e2e asserts the `Location` host is the public endpoint, then swaps it to the internal one to actually fetch from inside the Compose network.
 
 ### SI-03.11 — OpenAPI Contract Refresh and Documentation Update
-- **Status:** pending
-- **Tests:** —
-- **Observations:** —
+- **Status:** completed
+- **Tests:** 12/12 passing (openapi-export.integration-spec.ts — 3 new: every video path has a summary, the full seven-endpoint surface is documented, and only the upload endpoints require a bearer token)
+- **Observations:** The bearer-token assertion is the documentation-level counterpart of the Authorization Matrix: it fails if a viewing endpoint ever stops being anonymous, which the project plan requires. `CLAUDE.md` (root and `nestjs-project/`) and `README.md` were updated to describe the pipeline, the new Compose services and the real-infrastructure testing policy.
