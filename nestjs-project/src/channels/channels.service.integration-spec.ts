@@ -22,7 +22,10 @@ describe('ChannelsService (integration)', () => {
     await dataSource.initialize();
     userRepository = dataSource.getRepository(User);
     channelRepository = dataSource.getRepository(Channel);
-    channelsService = new ChannelsService(dataSource);
+    channelsService = new ChannelsService(
+      dataSource.getRepository(Channel),
+      dataSource,
+    );
   });
 
   afterAll(async () => {
@@ -87,6 +90,26 @@ describe('ChannelsService (integration)', () => {
 
       const channels = await channelRepository.find();
       expect(channels).toHaveLength(2);
+    });
+  });
+  describe('findByUserId', () => {
+    it('returns the channel created for the user', async () => {
+      const user = await createUser();
+      const created = await channelsService.createChannel(
+        user.id,
+        'lookup@example.com',
+      );
+
+      const found = await channelsService.findByUserId(user.id);
+
+      expect(found?.id).toBe(created.id);
+      expect(found?.nickname).toBe(created.nickname);
+    });
+
+    it('returns null for a user id with no channel', async () => {
+      const user = await createUser();
+
+      await expect(channelsService.findByUserId(user.id)).resolves.toBeNull();
     });
   });
 });

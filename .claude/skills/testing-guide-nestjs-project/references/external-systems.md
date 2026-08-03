@@ -37,69 +37,63 @@ How each external system is handled in tests. These strategies were confirmed wi
 
 ---
 
-## Object Storage — Local Filesystem
+## Object Storage — MinIO (Real, Docker)
 
-**Strategy:** Local filesystem storage in development and tests. S3 in production.
+**Strategy:** Real S3-compatible storage via the Docker `minio` service. MinIO in development and tests, Amazon S3 in production — the same API, so only environment variables change.
 
-**Approach:**
-- The storage layer should use an abstraction (e.g., `StorageService` interface) that allows switching between local filesystem and S3
-- In tests, use the local filesystem adapter — no mocking needed
-- Use a temporary directory for test uploads: `os.tmpdir()` or a dedicated `test-uploads/` directory
-- Clean up test files in `afterAll`
+> Decided in `docs/decisions/technical-decisions-phase-03-videos.md` TD-03 and TD-09. A local-filesystem adapter was rejected: it cannot exercise presigned URLs, multipart upload or range reads, which are the three mechanisms the video pipeline depends on.
 
-**Setup pattern:**
-```typescript
-// In test module setup
-{
-  provide: 'STORAGE_CONFIG',
-  useValue: {
-    driver: 'local',
-    basePath: path.join(os.tmpdir(), 'streamtube-test-uploads'),
-  },
-}
-```
+**Setup:**
+- MinIO is in `compose.yaml` with the API on port 9000 and the console on 9001
+- Tests reach it through `StorageService`, configured from `storage.config.ts` — no separate test wiring
+
+**Test isolation:**
+- Prefix every test object with a unique id so parallel-ish suites cannot collide
+- Delete created objects in `afterAll` via `storageService.deleteObject(key)`
+- The bucket itself is created idempotently at module bootstrap; tests never create or drop it
 
 **Integration test:**
 ```typescript
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-
 describe('StorageService (integration)', () => {
-  const testDir = path.join(os.tmpdir(), 'streamtube-test-uploads');
+  const key = `test/${crypto.randomUUID()}.txt`;
 
-  afterAll(() => {
-    fs.rmSync(testDir, { recursive: true, force: true });
+  afterAll(async () => {
+    await storageService.deleteObject(key);
   });
 
-  it('should upload and retrieve a file', async () => {
-    const buffer = Buffer.from('test content');
-    const key = await storageService.upload(buffer, 'test.txt');
+  it('uploads and reads back a byte range', async () => {
+    await storageService.putObject(key, Buffer.from('test content'));
 
-    const retrieved = await storageService.get(key);
-    expect(retrieved.toString()).toBe('test content');
+    const { body, contentRange } = await storageService.getObjectRange(key, 0, 3);
+    expect(contentRange).toBe('bytes 0-3/12');
+    expect((await streamToBuffer(body)).toString()).toBe('test');
   });
 });
 ```
 
+**Key points:**
+- Presigning is only meaningful against a real endpoint — a mocked client cannot catch a wrong `forcePathStyle`, a bad endpoint, or an expired-signature bug
+- `forcePathStyle: true` is required for MinIO; without it the SDK builds virtual-host-style URLs that do not resolve to the container
+
 ---
 
-## Message Queue — Real (Docker)
+## Message Queue — BullMQ + Redis (Real, Docker)
 
-**Strategy:** Real message broker in Docker. The specific technology is TBD per the architecture diagram (likely BullMQ with Redis or RabbitMQ).
+**Strategy:** Real Redis broker via the Docker `redis` service, driven through BullMQ.
 
-**When the queue technology is chosen, configure:**
-- A queue broker service in `compose.yaml` (e.g., Redis for BullMQ, RabbitMQ for AMQP)
-- Test isolation: use dedicated test queues or clean queues between tests
-- For publisher tests: assert the job is enqueued with correct data
-- For consumer tests: submit a job and assert the processing outcome
+> Decided in `docs/decisions/technical-decisions-phase-03-videos.md` TD-01. `@nestjs/bullmq@11` peer-requires `bullmq@^3 || ^4 || ^5` — pin `bullmq@^5`, not `^6`.
 
-**Setup pattern (BullMQ example):**
+**Test isolation:**
+- Call `await queue.obliterate({ force: true })` in `beforeEach` so a leftover job from a previous suite cannot satisfy an assertion
+- For publisher tests: assert the job is enqueued with the correct data
+- For consumer tests: invoke the processor's `process(job)` directly with a stub `Job` — this keeps the assertion on the processing outcome instead of on BullMQ's scheduling
+
+**Setup pattern:**
 ```typescript
 // In test module
 BullModule.forRoot({
   connection: {
-    host: process.env.REDIS_HOST ?? 'localhost',
+    host: process.env.REDIS_HOST ?? 'redis',
     port: Number(process.env.REDIS_PORT ?? 6379),
   },
 }),
@@ -107,12 +101,18 @@ BullModule.registerQueue({ name: 'video-processing' }),
 ```
 
 ```typescript
-describe('VideoService (integration - queue)', () => {
-  it('should enqueue a processing job on upload', async () => {
-    await videoService.upload(videoData);
+describe('VideosService (integration - queue)', () => {
+  let queue: Queue;
 
-    const queue = module.get<Queue>(getQueueToken('video-processing'));
-    const jobs = await queue.getJobs(['waiting']);
+  beforeEach(async () => {
+    queue = module.get<Queue>(getQueueToken('video-processing'));
+    await queue.obliterate({ force: true });
+  });
+
+  it('enqueues a processing job when the upload completes', async () => {
+    await videosService.completeUpload(videoId, ownerChannelId, parts);
+
+    const jobs = await queue.getJobs(['waiting', 'delayed', 'active']);
     expect(jobs).toHaveLength(1);
     expect(jobs[0].data).toEqual(
       expect.objectContaining({ videoId: expect.any(String) }),

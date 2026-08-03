@@ -10,6 +10,8 @@
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
+    "start:worker:dev": "nest start --watch --entryFile worker/main",
+    "start:worker:prod": "node dist/worker/main",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
@@ -28,7 +30,10 @@
     "openapi:export": "ts-node -r tsconfig-paths/register src/openapi-export.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1101.0",
+    "@aws-sdk/s3-request-presigner": "^3.1101.0",
     "@nestjs-modules/mailer": "^2.3.4",
+    "@nestjs/bullmq": "^11.0.4",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.3",
     "@nestjs/core": "^11.0.1",
@@ -38,6 +43,7 @@
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/typeorm": "^11.0.1",
     "argon2": "^0.41.1",
+    "bullmq": "^5.81.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.4",
     "handlebars": "^4.7.9",
@@ -90,6 +96,7 @@
     "testEnvironment": "node",
     "setupFiles": [
       "dotenv/config"
-    ]
+    ],
+    "testTimeout": 60000
   }
 }

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, QueryFailedError } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { appendRandomSuffix, sanitizeNickname } from './nickname.util';
 import { Channel } from './entities/channel.entity';
 
@@ -7,19 +8,31 @@ const PG_UNIQUE_VIOLATION = '23505';
 const NICKNAME_COLUMN = 'nickname';
 const MAX_RETRIES = 5;
 
+// `code` and `detail` come from the pg driver error, which QueryFailedError
+// exposes untyped.
+type PgDriverError = { code?: string; detail?: string };
+
 function isPgUniqueViolationOnColumn(err: unknown, column: string): boolean {
   if (!(err instanceof QueryFailedError)) return false;
-  const e = err as any;
+  const { code, detail } = err as QueryFailedError & PgDriverError;
   return (
-    e.code === PG_UNIQUE_VIOLATION &&
-    typeof e.detail === 'string' &&
-    e.detail.includes(column)
+    code === PG_UNIQUE_VIOLATION &&
+    typeof detail === 'string' &&
+    detail.includes(column)
   );
 }
 
 @Injectable()
 export class ChannelsService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectRepository(Channel)
+    private readonly channelRepository: Repository<Channel>,
+    private readonly dataSource: DataSource,
+  ) {}
+
+  async findByUserId(userId: string): Promise<Channel | null> {
+    return this.channelRepository.findOne({ where: { user_id: userId } });
+  }
 
   async createChannel(userId: string, email: string): Promise<Channel> {
     const baseNickname = sanitizeNickname(email.split('@')[0]);

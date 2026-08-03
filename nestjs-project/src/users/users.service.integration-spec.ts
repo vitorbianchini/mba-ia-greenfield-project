@@ -9,7 +9,6 @@ import {
 } from '../test/create-test-data-source';
 import { User } from './entities/user.entity';
 import { UsersService } from './users.service';
-import { TestingModule } from '@nestjs/testing';
 
 const ALL_ENTITIES = [User, Channel, RefreshToken, VerificationToken];
 
@@ -24,7 +23,10 @@ describe('UsersService (integration)', () => {
     await dataSource.initialize();
     userRepository = dataSource.getRepository(User);
     channelRepository = dataSource.getRepository(Channel);
-    const channelsService = new ChannelsService(dataSource);
+    const channelsService = new ChannelsService(
+      dataSource.getRepository(Channel),
+      dataSource,
+    );
     usersService = new UsersService(userRepository, channelsService);
   });
 
@@ -74,7 +76,10 @@ describe('UsersService (integration)', () => {
     });
 
     it('compensates by deleting the user when channel creation fails irrecoverably', async () => {
-      const failingChannelsService = new ChannelsService(dataSource);
+      const failingChannelsService = new ChannelsService(
+        dataSource.getRepository(Channel),
+        dataSource,
+      );
       jest
         .spyOn(failingChannelsService, 'createChannel')
         .mockRejectedValue(new Error('channel creation failed'));
