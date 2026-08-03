@@ -128,4 +128,58 @@ describe('exportSpec (integration)', () => {
       }
     }
   });
+  it('all video endpoints have a non-empty summary', () => {
+    const paths = document.paths as Record<
+      string,
+      Record<string, Record<string, unknown>>
+    >;
+    const videoPaths = Object.entries(paths).filter(([p]) =>
+      p.startsWith('/videos'),
+    );
+
+    expect(videoPaths.length).toBeGreaterThan(0);
+
+    for (const [, methods] of videoPaths) {
+      for (const operation of Object.values(methods)) {
+        expect(typeof operation.summary).toBe('string');
+        expect((operation.summary as string).length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('documents the whole video pipeline surface', () => {
+    const paths = document.paths as Record<string, Record<string, unknown>>;
+
+    expect(paths['/videos/uploads']?.post).toBeDefined();
+    expect(paths['/videos/uploads/{videoId}/complete']?.post).toBeDefined();
+    expect(paths['/videos/uploads/{videoId}']?.delete).toBeDefined();
+    expect(paths['/videos/{publicId}']?.get).toBeDefined();
+    expect(paths['/videos/{publicId}/stream']?.get).toBeDefined();
+    expect(paths['/videos/{publicId}/thumbnail']?.get).toBeDefined();
+    expect(paths['/videos/{publicId}/download']?.get).toBeDefined();
+  });
+
+  it('requires a bearer token only on the upload endpoints', () => {
+    const paths = document.paths as Record<
+      string,
+      Record<string, Record<string, unknown>>
+    >;
+    const requiresToken = (path: string, method: string): boolean => {
+      const security = paths[path]?.[method]?.security as
+        | Array<Record<string, unknown>>
+        | undefined;
+      return Boolean(security?.some((req) => 'access-token' in req));
+    };
+
+    expect(requiresToken('/videos/uploads', 'post')).toBe(true);
+    expect(requiresToken('/videos/uploads/{videoId}/complete', 'post')).toBe(
+      true,
+    );
+    expect(requiresToken('/videos/uploads/{videoId}', 'delete')).toBe(true);
+
+    // Anonymous viewing is a project-plan requirement.
+    expect(requiresToken('/videos/{publicId}', 'get')).toBe(false);
+    expect(requiresToken('/videos/{publicId}/stream', 'get')).toBe(false);
+    expect(requiresToken('/videos/{publicId}/download', 'get')).toBe(false);
+  });
 });
